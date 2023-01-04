@@ -13,10 +13,15 @@ class HeuristicController(FlightController):
 
         """
 
-        self.ky = 1.0
-        self.kx = 0.5
-        self.abs_pitch_delta = 0.1
-        self.abs_thrust_delta = 0.3
+        # self.ky = 1.0
+        # self.kx = 0.5
+        # self.abs_pitch_delta = 0.1
+        # self.abs_thrust_delta = 0.3
+        
+        self.ky = 1.0398319672
+        self.kx =  0.3952027
+        self.abs_pitch_delta = 0.09234103
+        self.abs_thrust_delta = 0.318446492
         
 
     def get_max_simulation_steps(self):
@@ -115,7 +120,3 @@ class HeuristicController(FlightController):
         parameter_array = np.array([self.ky, self.kx, self.abs_pitch_delta, self.abs_thrust_delta])
         np.save('heuristic_controller_parameters.npy', parameter_array)
         
-        
-if __name__ == "__main__":
-    controller = HeuristicController()
-    controller.train()

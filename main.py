@@ -16,7 +16,7 @@ def generate_controller() -> FlightController:
     # return CustomController()
     
 def is_training() -> bool:
-    return True # <--- Replace this with True if you want to train, false otherwise
+    return False # <--- Replace this with True if you want to train, false otherwise
 def is_saving() -> bool:
     return True # <--- Replace this with True if you want to save the results of training, false otherwise
 
@@ -133,4 +133,4 @@ if __name__ == "__main__":
     else:
         controller.load()
     
-    #main(controller)
+    main(controller)
