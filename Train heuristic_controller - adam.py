@@ -18,7 +18,7 @@ class HeuristicController(FlightController):
         
 
     def get_max_simulation_steps(self):
-            return 1000 # You can alter the amount of steps you want your program to run for here
+            return 3000 # You can alter the amount of steps you want your program to run for here
 
 
     def get_thrusts(self, drone: Drone) -> Tuple[float, float]:
@@ -54,10 +54,10 @@ class HeuristicController(FlightController):
         """
         
         
-        epochs = 30
+        epochs = 50
         alpha = 1e-3
         b1 = 0.9
-        b2 = 0.9
+        b2 = 0.999
         params = [1.0, 0.5, 0.1, 0.3]                
         grads = [0, 0, 0, 0]
         m = [0, 0, 0, 0]
@@ -66,8 +66,11 @@ class HeuristicController(FlightController):
         for n in range(epochs):
             
             ## Forward pass
-            #print(f"Forward pass for epoch:{n+1}")        
-            R1 = self.getReward(params)
+            print(f"Epoch:{n+1}")
+            if n==0 or (n+1) % 10 == 0:
+                R1 = self.simaulation(params)
+            else:
+                R1 = self.getReward(params)
             #print(f"Reward: {R1}")
                         
             ## Estimate grads / for backprop
@@ -91,7 +94,7 @@ class HeuristicController(FlightController):
             ## Log the data before updating to new data
             data = {'epoch':n+1, 'params':params, 'grads':grads, 'reward': R1}            
             self.logWeights(n+1, data, save_path)
-            print(f"Epoch {n}:  params {params}, Reward: {R1}, Grads: {grads}")
+            print(f" --params {params}, Reward: {R1}, Grads: {grads}")
             #print("\n\n") 
             
             ## Update parameters
@@ -102,15 +105,46 @@ class HeuristicController(FlightController):
                 vt_cap = v[i]/(1-b2)
                 params[i] = params[i] + alpha * mt_cap/(np.sqrt(vt_cap)+1e-8)          
           
-        
-        
     def getReward(self, params):
+        
+        return_ = 0
+        last_distance = float("inf")
+        
+        ## Set to new parameters
         
         self.ky = params[0]
         self.kx = params[1]
         self.abs_pitch_delta = params[2]
         self.abs_thrust_delta = params[3]
-        reward = 0
+        
+        # create a new drone simulation
+        drone = self.init_drone()
+        # 3) run simulation
+        for t in range(self.get_max_simulation_steps()):
+            drone.set_thrust(self.get_thrusts(drone))
+            drone.step_simulation(self.get_time_interval())
+            
+            # Calculate reward
+            if drone.has_reached_target_last_update:                    
+                return_ += 2
+                last_distance = float("inf")
+                                      
+            elif self.findDistance(drone) < last_distance:
+                last_distance = self.findDistance(drone)
+                return_ += 1
+                
+            else:
+                return_ -= 1   
+                
+        return return_
+        
+    def simaulation(self, params):
+        
+        self.ky = params[0]
+        self.kx = params[1]
+        self.abs_pitch_delta = params[2]
+        self.abs_thrust_delta = params[3]
+        return_ = 0
         last_distance = float("inf")
         
         # Initialise pygame
@@ -151,18 +185,18 @@ class HeuristicController(FlightController):
                 
             # Calculate reward
             if drone.has_reached_target_last_update:                    
-                reward += 2
+                return_ += 2
                 last_distance = float("inf")
                                       
             elif self.findDistance(drone) < last_distance:
                 last_distance = self.findDistance(drone)
-                reward += 1
+                return_ += 1
                 
             else:
-                reward -= 1          
+                return_ -= 1          
             
             
-        return reward
+        return return_
         
     def logWeights(self, epoch, data, save_path):
         file_name = 'params_epoch{}.pkl'.format(epoch)
