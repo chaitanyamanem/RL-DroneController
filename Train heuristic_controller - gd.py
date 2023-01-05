@@ -1,3 +1,13 @@
+""" This script contains drone training code with GD optimizer
+
+Optimizer: Normal gradient ascent
+Reward funciton: If drone travel towords its next target point and goes closer than 
+the last point gets positive reward. If it goes away from the target point gets negative reward.
+positive reward for reaching the target.
+    
+
+"""
+
 import numpy as np
 from flight_controller import FlightController
 from drone import Drone
@@ -5,6 +15,8 @@ from typing import Tuple
 import pygame
 import pickle
 from main import *
+import os, datetime
+import pandas as pd
 
 class HeuristicController(FlightController):
 
@@ -17,7 +29,7 @@ class HeuristicController(FlightController):
         
 
     def get_max_simulation_steps(self):
-            return 1000 # You can alter the amount of steps you want your program to run for here
+            return 3000 # You can alter the amount of steps you want your program to run for here
 
 
     def get_thrusts(self, drone: Drone) -> Tuple[float, float]:
@@ -48,26 +60,30 @@ class HeuristicController(FlightController):
         # The default controller sets each propeller to a value of 0.5 0.5 to stay stationary.
         return (thrust_left, thrust_right)
 
-    def train(self):
+    def train(self, save_path):
         """A self contained method designed to train parameters created in the initialiser.
         """
-        epochs = 10
-        params = [1.0, 0.5, 0.1, 0.3]
+        epochs = 60
         alpha = 1e-4
         
+        params = [1.0, 0.5, 0.1, 0.3]       
         grads = [0, 0, 0, 0]
 
         for n in range(epochs):
             
             ## Forward pass
-            print(f"Forward pass for epoch:{n+1}")        
-            R1 = self.getReward(params)
-            print(f"Reward: {R1}")
-            ## Log the data before backprop
-            data = {'epoch':n+1, 'params':params, 'grads':grads, 'reward': R1}            
-            self.logWeights(n+1, data)            
-            ## Estimate grads / for backprop
-            print(f"Back prop for epoch:{n+1}")
+            print(f"Epoch:{n+1}")
+            
+            #Calculating total return of the trajectory for current parameters
+            #See the done navigation visually for every 20 epochs
+            if n == 0 or n+1 % 20 == 0:
+                R1 = self.getReturn(params,True)
+            else:
+                R1 = self.getReturn(params,False)
+            
+                        
+            ## Back propagation / Estimating gradients
+            #Using numerical approximation method           
                         
             for i in range(len(params)):
                 print(f" -- Finding Grad for parameter {i+1}")
@@ -77,35 +93,31 @@ class HeuristicController(FlightController):
                 params_changed = params.copy()
                 params_changed[i] = p2
                 
-                #R1 = self.getReward(params)
-                R2 = self.getReward(params_changed)
+                
+                R2 = self.getReturn(params_changed, False)
                 #Calclate the gradient
                 dR = (R2-R1)/(p2-p1)
                 grads[i] = dR
                 print(f"   - Reward is: {R2} Grad is: {dR}")
+                
+            ## Log the data before updating params
+            data = {'epoch':n+1, 'params':params, 'grads':grads, 'reward': R1}            
+            self.logWeights(n+1, data, save_path)
+            print(f" -- Reward: {R1}, params {params}, Grads: {grads}")           
             
             ## Update parameters
             for i in range(len(params)):
                 params[i] = params[i] + alpha * grads[i]           
-            print(f"Updated params :{params}")
-            print("\n\n")
 
-            
-        print("Finding Final reward")
-        R1 = self.getReward(params)
-        print(f"Final Reward: {R1}")
-        print(f"Final params: {params}")
-        ## Log the data of final run
-        data = {'epoch':n+1, 'params':params, 'grads':grads, 'reward': R1}
-        self.logWeights(n+1, data)
+
         
-    def getReward(self, params):
+    def getReturn(self, params, show_drone):
         
         self.ky = params[0]
         self.kx = params[1]
         self.abs_pitch_delta = params[2]
         self.abs_thrust_delta = params[3]
-        reward = 0
+        return_ = 0
         last_distance = float("inf")
         
         # Initialise pygame
@@ -131,37 +143,40 @@ class HeuristicController(FlightController):
         for t in range(self.get_max_simulation_steps()):
             drone.set_thrust(self.get_thrusts(drone))
             drone.step_simulation(self.get_time_interval())
-            # Refresh the background
-            screen.blit(background_img, (0,0))
-            # Draw the current drone on the screen
-            draw_drone(screen, drone, drone_img)
-            # Draw the next target on the screen
-            draw_target(drone.get_next_target(), screen, target_img)
-        
-            # Actually displays the final frame on the screen
-            pygame.display.flip()
-        
-            # Makes sure that the simulation runs at a target 60FPS
-            clock.tick(60)
+            
+            if show_drone:
+                # Refresh the background
+                screen.blit(background_img, (0,0))
+                # Draw the current drone on the screen
+                draw_drone(screen, drone, drone_img)
+                # Draw the next target on the screen
+                draw_target(drone.get_next_target(), screen, target_img)
+            
+                # Actually displays the final frame on the screen
+                pygame.display.flip()
+            
+                # Makes sure that the simulation runs at a target 60FPS
+                clock.tick(60)
                 
-            # Calculate reward
+            ## Calculate reward
             if drone.has_reached_target_last_update:                    
-                reward += 2
+                return_ += 2
                 last_distance = float("inf")
                                       
             elif self.findDistance(drone) < last_distance:
                 last_distance = self.findDistance(drone)
-                reward += 1
+                return_ += 1
                 
             else:
-                reward -= 1          
+                return_ -= 1          
             
             
-        return reward
+        return return_
         
-    def logWeights(self, epoch, data):
-        file_name = 'weights/current/params_epoch{}.pkl'.format(epoch)        
-        with open(file_name,'wb') as file:
+    def logWeights(self, epoch, data, save_path):
+        file_name = 'params_epoch{}.pkl'.format(epoch)
+        file_path = os.path.join(save_path, file_name)        
+        with open(file_path,'wb') as file:
             pickle.dump(data, file)
         
     def findDistance(self, drone: Drone):
@@ -192,5 +207,17 @@ class HeuristicController(FlightController):
         
         
 if __name__ == "__main__":
+    
     controller = HeuristicController()
-    controller.train()
+    
+    ## Making directory to log the training data
+    newdir = os.path.join(os.getcwd(),"weights","run_"+datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    os.makedirs(newdir)
+    
+    ## Update read me text
+    readme_text = """ Reward function with positive going closer to target and 
+negative for going awaya and positive for reaching the target      """
+    with open(newdir+'/readme.txt', 'w') as f:
+        f.write(readme_text)
+        
+    controller.train(newdir)
