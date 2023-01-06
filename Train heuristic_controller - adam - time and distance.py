@@ -41,6 +41,11 @@ class HeuristicController(FlightController):
         Returns:
             Tuple[float, float]: A pair of floating point values which respectively represent the thrust of the left and right propellers, must be between 0 and 1 inclusive.
         """
+        
+        # self.ky = 1.0
+        # self.kx = 0.5
+        # self.abs_pitch_delta = 0.1
+        # self.abs_thrust_delta = 0.3
 
         target_point = drone.get_next_target()
         
@@ -82,16 +87,16 @@ class HeuristicController(FlightController):
             #Calculating total return of the trajectory for current parameters
             #See the done navigation visually for every 20 epochs
             if n == 0 or (n+1) % 20 == 0:
-                R1 = self.getReturn(params,True)
+                R1, hits, dist_left  = self.getReturn(params,True)
             else:
-                R1 = self.getReturn(params,False)
+                R1, hits, dist_left  = self.getReturn(params,False)
             
                         
             ## Back propagation / Estimating gradients
             #Using numerical approximation method           
                         
             for i in range(len(params)):
-                print(f" -- Finding Grad for parameter {i+1}")
+                #print(f" -- Finding Grad for parameter {i+1}")
                 delta = 0.0001
                 p1 = params[i]
                 p2 = p1 + delta
@@ -99,16 +104,16 @@ class HeuristicController(FlightController):
                 params_changed[i] = p2
                 
                 
-                R2 = self.getReturn(params_changed, False)
+                R2,_,_ = self.getReturn(params_changed, False)
                 #Calclate the gradient
                 dR = (R2-R1)/(p2-p1)
                 grads[i] = dR
-                print(f"   - Reward is: {R2} Grad is: {dR}")
+                #print(f"   - Reward is: {R2} Grad is: {dR}")
                 
             ## Log the data before updating params
-            data = {'epoch':n+1, 'params':params, 'grads':grads, 'reward': R1}            
+            data = {'epoch':n+1, 'params':params, 'grads':grads, 'reward': R1, 'hits': hits, 'dist_left':dist_left}            
             self.logWeights(n+1, data, save_path)
-            print(f" -- Reward: {R1}, params {params}, Grads: {grads}")
+            print(f" > Reward: {R1}, Hits: {hits}, dist left: {dist_left}, params {params}, Grads: {grads}")
             
             ## Update parameters
             for i in range(len(params)):
@@ -127,7 +132,8 @@ class HeuristicController(FlightController):
         self.abs_pitch_delta = params[2]
         self.abs_thrust_delta = params[3]
         return_ = 0
-        last_distance = float("inf")
+        target_hits = 0
+        
         
         # Initialise pygame
         pygame.init()
@@ -169,17 +175,19 @@ class HeuristicController(FlightController):
                 
             ## Calculate reward at this time step
             if drone.has_reached_target_last_update:                    
-                return_ += 2
-                last_distance = float("inf")
-                                      
-            elif self.findDistance(drone) < last_distance:
-                last_distance = self.findDistance(drone)
-                return_ += 1
+                return_ += 1000
+                target_hits += 1
                 
-            return_ -= 1          
+            else:
+                ## Every time step is a negative reward
+                return_ -= 1          
+        
+        ## At the end unfinished target left over distance is also added 
+        # to return , smaller is better.
+        dist_left = self.findDistance(drone) * 480        
+        return_ -= dist_left           
             
-            
-        return return_
+        return return_, target_hits, dist_left
         
     def logWeights(self, epoch, data, save_path):
         file_name = 'params_epoch{}.pkl'.format(epoch)
@@ -224,7 +232,7 @@ if __name__ == "__main__":
     
     ## Update read me text
     readme_text = """ Reward function with every step negative reward, positive for reaching the 
-    target, postive if it goes closer to the target. Opimizer changed to Adam  """
+    target, left over distance of unfinished target also added to return. Opimizer changed to Adam  """
     with open(newdir+'/readme.txt', 'w') as f:
         f.write(readme_text)
         
