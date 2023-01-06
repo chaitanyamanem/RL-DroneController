@@ -44,6 +44,8 @@ class FlightController():
         drone.add_target_coordinate((-0.35, 0.4))
         drone.add_target_coordinate((0.5, -0.4))
         drone.add_target_coordinate((-0.35, 0))
+        drone.add_target_coordinate((0.45, 0.1))
+        drone.add_target_coordinate((-0.45, 0.1))
  
         
         return drone
